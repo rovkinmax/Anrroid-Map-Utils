@@ -1,19 +1,3 @@
-/*
- * Copyright 2013 Google Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 package com.google.maps.android.clustering;
 
 import android.content.Context;
@@ -59,6 +43,7 @@ public class ClusterManager<T extends ClusterItem> implements GoogleMap.OnCamera
     private OnClusterInfoWindowClickListener<T> mOnClusterInfoWindowClickListener;
     private OnClusterItemInfoWindowClickListener<T> mOnClusterItemInfoWindowClickListener;
     private OnClusterClickListener<T> mOnClusterClickListener;
+    private boolean mShowOnlyVisibleArea;
 
     public ClusterManager(Context context, GoogleMap map) {
         this(context, map, new MarkerManager(map));
@@ -108,11 +93,21 @@ public class ClusterManager<T extends ClusterItem> implements GoogleMap.OnCamera
             if (mAlgorithm != null) {
                 algorithm.addItems(mAlgorithm.getItems());
             }
-            mAlgorithm = new PreCachingAlgorithmDecorator<T>(algorithm);
+
+            mAlgorithm = algorithm;
         } finally {
             mAlgorithmLock.writeLock().unlock();
         }
+
+        if (mAlgorithm instanceof GoogleMap.OnCameraChangeListener) {
+            ((GoogleMap.OnCameraChangeListener) mAlgorithm).onCameraChange(mMap.getCameraPosition());
+        }
+
         cluster();
+    }
+
+    public void setClusterOnlyVisibleArea(boolean onlyVisibleArea) {
+        mShowOnlyVisibleArea = onlyVisibleArea;
     }
 
     public void clearItems() {
@@ -182,14 +177,18 @@ public class ClusterManager<T extends ClusterItem> implements GoogleMap.OnCamera
             ((GoogleMap.OnCameraChangeListener) mRenderer).onCameraChange(cameraPosition);
         }
 
-        // Don't re-compute clusters if the map has just been panned/tilted/rotated.
-        CameraPosition position = mMap.getCameraPosition();
-        if (mPreviousCameraPosition != null && mPreviousCameraPosition.zoom == position.zoom) {
-            return;
+        if (mAlgorithm instanceof GoogleMap.OnCameraChangeListener) {
+            ((GoogleMap.OnCameraChangeListener) mAlgorithm).onCameraChange(cameraPosition);
         }
-        mPreviousCameraPosition = mMap.getCameraPosition();
 
-        cluster();
+        // Don't re-compute clusters if the map has just been panned/tilted/rotated.
+        if (mShowOnlyVisibleArea) {
+            // algorithm will decide if it is need to recompute clusters
+            cluster();
+        } else if (mPreviousCameraPosition == null || mPreviousCameraPosition.zoom != cameraPosition.zoom) {
+            mPreviousCameraPosition = mMap.getCameraPosition();
+            cluster();
+        }
     }
 
     @Override
